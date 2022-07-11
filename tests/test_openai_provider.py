@@ -27,3 +27,12 @@ def test_create_wrapper_with_invalid_api_key():
     with pytest.raises(Exception) as e_info:
         LLMWrapper("openai", "invalid_api_key")
     assert "Invalid API key" in str(e_info.value) or "Incorrect API key" in str(e_info.value)
+
+
+def test_default_completion_call():
+    from src import LLMWrapper
+    API_KEY = os.getenv("OPENAI_API_KEY")
+    my_llm = LLMWrapper("openai", API_KEY)
+    result = my_llm.completion("hello how are you?")
+    assert type(result) is str
+
