@@ -10,6 +10,7 @@ class LLMWrapper:
             self.models = openai.Model.list()["data"]
             self.authenticated = True
             self.API_KEY = openai.api_key
-
+        else:
+            raise Exception("Invalid API name")
 
 
