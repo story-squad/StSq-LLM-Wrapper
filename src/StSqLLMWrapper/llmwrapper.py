@@ -7,7 +7,7 @@ class LLMWrapper:
                 openai.api_key = os.getenv("OPENAI_API_KEY")
             else:
                 openai.api_key = API_KEY
-            self.models = openai.Model.list()
+            self.models = openai.Model.list()["data"]
             self.authenticated = True
             self.API_KEY = openai.api_key
 
