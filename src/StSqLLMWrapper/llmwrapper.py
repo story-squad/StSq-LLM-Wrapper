@@ -12,14 +12,16 @@ class LLMResponse:
 
 
 @dataclasses.dataclass
-class LLMDefaults():
+class LLMDefaults:
     default_completion_model_name: str = "NONE"
-    default_search_model_name: str = "NONE"
+    default_search_query_model_name: str = "NONE"
+    default_search_document_model_name: str = "NONE"
 
 
 class OpenaiLLMDefaults():
     default_completion_model_name: str = "text-ada-001"
-    default_search_model_name: str = "search-ada-001"
+    default_search_query_model_name: str = "text-search-curie-query-001"
+    default_search_document_model_name: str = "curie-search-document"
 
 
 @dataclasses.dataclass
@@ -34,6 +36,8 @@ class LLMRequest:
     stop: str = "."
     prompt: str = None
     context: str = None
+    documents: str = None
+    query: str = None
 
 
 @dataclasses.dataclass
@@ -63,22 +67,24 @@ class LLMWrapper:
         self.search_model_name = ""
         self.is_openai_api = False
 
-        if API_NAME.lower() == "openai":
+        if api_name.lower() == "openai":
             self.is_openai_api = True
             # set default values for openai api
             self.set_defaults()
             # get the api key from the environment variable if it is not provided
-            if not API_KEY:
+            if not api_key:
                 openai.api_key = os.getenv("OPENAI_API_KEY")
             else:
-                openai.api_key = API_KEY
+                openai.api_key = api_key
             # get the list of models
             self.models = openai.Model.list()["data"]
             self.API_KEY = openai.api_key
             self.authenticated = True
 
             if completion_model_name: self.completion_model_name = completion_model_name
-            if search_model_name: self.search_model_name = search_model_name
+            if search_query_model_name: self.search_query_model_name = search_query_model_name
+            if search_document_model_name: self.search_document_model_name = search_document_model_name
+
         else:
             raise Exception("Invalid API name")
 
@@ -89,9 +95,10 @@ class LLMWrapper:
             if not self.completion_model_name:
                 self.completion_model_name = OpenaiLLMDefaults.default_completion_model_name
             if not self.search_model_name:
-                self.search_model_name = OpenaiLLMDefaults.default_search_model_name
+                self.search_query_model_name = OpenaiLLMDefaults.default_search_query_model_name
+                self.search_document_model_name = OpenaiLLMDefaults.default_search_document_model_name
 
-    def handle_kwargs(self, request: LLMRequest)-> dict:
+    def handle_kwargs(self, request: LLMRequest) -> dict:
         """
         returns kwargs modified to be compatible with the current api
         :rtype: dict
@@ -101,8 +108,7 @@ class LLMWrapper:
             raise Exception("incoming class is not LLMRequest")
 
         if self.is_openai_api:
-            oai_kwargs = {}
-            oai_kwargs["API_NAME"] = "openai"
+            oai_kwargs = {"api_name": "openai"}
 
             if request.top_p is not None:
                 oai_kwargs["top_p"] = request.top_p
@@ -116,20 +122,62 @@ class LLMWrapper:
             oai_kwargs["stop"] = request.stop
 
             if request.context:
-                oai_kwargs["prompt"] = + request.prompt+request.context
+                oai_kwargs["prompt"] = request.prompt + request.context
             else:
                 oai_kwargs["prompt"] = request.prompt
 
             return oai_kwargs
 
+    def open_ai_search(self, request: LLMRequest) -> LLMResponse:
+        if self.is_openai_api:
+            import openai
+            import numpy as np
 
-    def completion(self, prompt=None, kwargs: LLMRequest = None) -> LLMResponse:
+            query_embedding = openai.Embedding.create(input=request.query, model=self.search_query_model_name).data[
+                0].embedding
+            choices_embeddings = openai.Embedding.create(input=request.documents,
+                                                         model=self.search_document_model_name).data
+            emb_tup = [
+                (choice, choice_emb.embedding) for choice, choice_emb in zip(request.documents, choices_embeddings)]
+
+            def cos_sim(a, b):
+                a=np.array(a)
+                b=np.array(b)
+                return (a @ b.T) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+            res = [(cos_sim(query_embedding, choice_emb),choice) for choice,choice_emb in emb_tup]
+            res = sorted(res, key=lambda x: x[0], reverse=True)
+            return res
+
+    def search(self, request: LLMRequest) -> LLMResponse:
         """
         returns the completion response from the llm api
+        :param request:
         :param prompt:
         :param kwargs:
         :return:
         """
+
+        if self.is_openai_api:
+            import openai
+
+            kwargs = self.handle_kwargs(request)
+
+            if not issubclass(request.__class__, LLMRequest):
+                raise Exception("Searches only possible with LLMRequest")
+            else:
+                if not kwargs["api_name"].lower() == "openai":
+                    raise Exception("keyword args class not for use with openai api")
+                else:
+                    result = self.open_ai_search(request)
+
+                    return result
+
+        elif self.is_other:
+            raise Exception("not implemented")
+
+    def completion(self, prompt=None, kwargs: LLMRequest = None) -> LLMResponse:
+
         # ensure that the prompt is included in the kwargs object for consistency and create a new kwargs object if
         # one is not provided
 
@@ -159,7 +207,7 @@ class LLMWrapper:
 
             # if kwargs is not compatible with the current api, return a compatible kwargs
 
-            kwargs.pop("API_NAME")
+            kwargs.pop("api_name")
 
             model_to_use = self.completion_model_name
 
