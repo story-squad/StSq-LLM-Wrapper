@@ -50,7 +50,13 @@ class OpenaiKWArgs(LLMRequest):
 
 
 class LLMWrapper:
-    def __init__(self, API_NAME, API_KEY=None, completion_model_name=None, search_model_name=None):
+    def __init__(self, api_name, api_key=None, completion_model_name=None, search_query_model_name=None,
+                 search_document_model_name=None):
+        """
+        :param api_name: openai, or another provider name (only openai in this version)
+        :param api_key: provide or leave blank for env variable
+        """
+
         import os
         import openai
         self.completion_model_name = ""
