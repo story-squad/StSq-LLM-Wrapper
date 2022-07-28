@@ -1,6 +1,7 @@
 import dataclasses
 
 
+
 # this class organizes the data received from the llm api in a manner that the consumer of the wrapper can rely on.
 @dataclasses.dataclass
 class LLMResponse:
@@ -13,9 +14,9 @@ class LLMResponse:
 
 @dataclasses.dataclass
 class LLMDefaults:
-    default_completion_model_name: str = "NONE"
-    default_search_query_model_name: str = "NONE"
-    default_search_document_model_name: str = "NONE"
+    default_completion_model_name: str = None
+    default_search_query_model_name: str = None
+    default_search_document_model_name: str = None
 
 
 class OpenaiLLMDefaults():
@@ -26,12 +27,12 @@ class OpenaiLLMDefaults():
 
 @dataclasses.dataclass
 class LLMRequest:
-    API_NAME: str = "NONE"
+    API_NAME: str = None
     temperature: float = .5
     max_tokens: int = 40
     top_p: float = .7
     best_of: int = 1
-    frequency_penalty: float = .2
+    frequency_penalty: float = 0
     presence_penalty: float = 0
     stop: str = "."
     prompt: str = None
@@ -47,11 +48,35 @@ class OpenaiKWArgs(LLMRequest):
     max_tokens: int = 40
     top_p: float = .7
     best_of: int = 1
-    frequency_penalty: float = .2
+    frequency_penalty: float = .0
     presence_penalty: float = 0
     stop: str = "."
     prompt: str = None
 
+
+class LLMFilter:
+    """Superclass that all LLM filters should inherit from, subclasses should implement the apply() method"""
+
+    def __init__(self, name: str = "unnamed filter"):
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.name
+
+    def __call__(self, request: LLMRequest, response: LLMResponse):
+        return self.apply(request, response)
+
+    def apply(self, request: LLMRequest, response: LLMResponse):
+        raise NotImplementedError("LLMFilter.apply() not implemented")
+
+    def get_param_value(self, param_name, param_value):
+        if param_name in self.params_dict:
+            return self.params_dict[param_name].get_value(param_value)
+        else:
+            raise ValueError("LLMFilter.get_param_value() - Parameter {} not found".format(param_name))
 
 class LLMWrapper:
     def __init__(self, api_name, api_key=None, completion_model_name=None, search_query_model_name=None,
@@ -122,7 +147,7 @@ class LLMWrapper:
             oai_kwargs["stop"] = request.stop
 
             if request.context:
-                oai_kwargs["prompt"] = request.prompt + request.context
+                oai_kwargs["prompt"] = request.context + request.prompt
             else:
                 oai_kwargs["prompt"] = request.prompt
 
@@ -141,11 +166,11 @@ class LLMWrapper:
                 (choice, choice_emb.embedding) for choice, choice_emb in zip(request.documents, choices_embeddings)]
 
             def cos_sim(a, b):
-                a=np.array(a)
-                b=np.array(b)
+                a = np.array(a)
+                b = np.array(b)
                 return (a @ b.T) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-            res = [(cos_sim(query_embedding, choice_emb),choice) for choice,choice_emb in emb_tup]
+            res = [(cos_sim(query_embedding, choice_emb), choice) for choice, choice_emb in emb_tup]
             res = sorted(res, key=lambda x: x[0], reverse=True)
             return res
 
@@ -196,7 +221,6 @@ class LLMWrapper:
 
         if self.is_openai_api:
             import openai
-            kwargs_dict = {}
 
             kwargs = self.handle_kwargs(kwargs)
 
@@ -212,7 +236,7 @@ class LLMWrapper:
             model_to_use = self.completion_model_name
 
             result = openai.Completion.create(model=model_to_use,
-                                              **kwargs_dict)
+                                              **kwargs)
             out_result = LLMResponse(raw_response=result,
                                      completion=result["choices"][0]["text"])
 
