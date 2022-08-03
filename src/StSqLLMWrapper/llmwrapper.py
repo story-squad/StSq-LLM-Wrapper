@@ -1,16 +1,61 @@
 import dataclasses
+from dataclasses import field
 
+#            -= OpenAI text data =-
+# {
+#  "id": "cmpl-uqkvlQyYK7bGYrRHQ0eXlWi7",
+#  "object": "text_completion",
+#  "created": 1589478378,
+#  "model": "text-babbage-001",
+#  "choices": [
+#    {
+#      "text": "\n\nThis is a test",
+#      "index": 0,
+#      "logprobs": null,
+#      "finish_reason": "length"
+#    }
+#  ],
+#  "usage": {
+#    "prompt_tokens": 5,
+#    "completion_tokens": 6,
+#    "total_tokens": 11
+#  }
+# }
 
+#            -= OpenAI embeddings response =-
+# {
+#  "object": "list",
+#  "data": [
+#    {
+#      "object": "embedding",
+#      "embedding": [
+#        0.018990106880664825,
+#        -0.0073809814639389515,
+#        .... (1024 floats total for ada)
+#        0.021276434883475304,
+#      ],
+#      "index": 0
+#    }
+#  ],
+#  "usage": {
+#    "prompt_tokens": 8,
+#    "total_tokens": 8
+#  }
+# }
 
 # this class organizes the data received from the llm api in a manner that the consumer of the wrapper can rely on.
+from typing import Any
+
+
 @dataclasses.dataclass
 class LLMResponse:
     """
-
     """
     raw_response: 'typing.Any' = object()
-    completion: str = None
-    completion_processed_data: dict = None
+    text: list = field(default_factory=list)
+    text_processed_data: dict = field(default_factory=dict)
+    data: list = field(default_factory=list)
+    data_processed: list = field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -39,14 +84,28 @@ class LLMRequest:
     frequency_penalty: float = 0
     presence_penalty: float = 0
     stop: str = "."
-    prompt: str = None
-    context: str = None
-    documents: str = None
-    prompt_processed_data: dict = None
-    context_processed_data: dict = None
-    documents_processed_data: dict = None
-    query: str = None
+    prompt: list = field(default_factory=list)
+    query: list = field(default_factory=list)
+    context: list = field(default_factory=list)
+    documents: list = field(default_factory=list)
+
+    prompt_processed_data: dict = field(default_factory=dict)
+    query_processed_data: dict = field(default_factory=dict)
+    context_processed_data: dict = field(default_factory=dict)
+    documents_processed_data: dict = field(default_factory=dict)
+
     n: int = 1
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ["prompt", "query", "context", "documents"]:
+            if value.__class__ == str:
+                super().__setattr__(name, [value])
+            elif value.__class__ == list:
+                super().__setattr__(name, value)
+            else:
+                raise TypeError("LLMRequest.__setattr__() only accepts str or list as value")
+        else:
+            super().__setattr__(name, value)
 
 
 @dataclasses.dataclass
@@ -63,23 +122,156 @@ class OpenaiKWArgs(LLMRequest):
     n: int = 1
 
 
-class LLMProcessor:
-    """Superclass that all LLM filters should inherit from, subclasses should implement the apply() method"""
-
-    def __init__(self, name: str = "unnamed filter"):
-        self.name = name
-
+class BaseLLMProcessor:
     def __str__(self):
         return self.name
 
     def __repr__(self):
         return self.name
 
-    def __call__(self, request: LLMRequest, response: LLMResponse):
-        return self.apply(request, response)
+    def __init__(self, name: str):
+        self.name = name
+
+
+class LLMReqProcessor(BaseLLMProcessor):
+    def will_handle(*args):
+        if issubclass(args[1], LLMRequest):
+            return True
+        return False
 
     def apply(self, request: LLMRequest, response: LLMResponse):
-        raise NotImplementedError("LLMProcessor.apply() not implemented")
+        raise NotImplementedError("apply() not implemented")
+
+    def __call__(self, request: LLMRequest):
+
+        if not request:
+            raise RuntimeError("nothing to apply")
+        else:
+
+            if request.query and request.documents:  # search request
+                data1 = [request.query]
+                data2 = [[i] for i in request.documents]
+                modify_list = data1 + data2
+
+                report1 = []
+                report2 = []
+
+                request.query_processed_data[self.name] = report1
+                request.docs_processed_data[self.name] = report2
+                report_list = [report1] + [report2]
+
+            if request.prompt:
+                modify_list += [[i] for i in request.prompt]
+                report_list += [[None]] * len(request.prompt)
+                request.prompt_processed_data[self.name] = report_list
+
+            if request.context:
+                modify_list += [[i] for i in request.context]
+                report_list += [[None]] * len(request.context)
+                request.context_processed_data[self.name] = report_list
+
+            self.apply(modify_list, report_list)
+
+
+class LLMResProcessor(BaseLLMProcessor):
+    def will_handle(*args):
+        if issubclass(args[1], LLMResponse):
+            return True
+        return False
+    def apply(self, request: LLMRequest, response: LLMResponse):
+        raise NotImplementedError("apply() not implemented")
+
+    def __call__(self, response: LLMResponse):
+        report_list = []
+        modify_list = []
+
+        if not response:
+            raise RuntimeError("nothing to apply")
+        else:
+            if response.text:
+                modify_list += [[i.text] for i in response.choices]
+                report_list += [[None]] * len(response.text)
+
+            if response.data:
+                modify_list += [i.embedding for i in response.data]
+                report_list += [[None]] * len(response.data)
+
+        self.apply(modify_list, report_list)
+
+
+class LLMReqResProcessor(BaseLLMProcessor):
+    """Superclass that all LLM filters should inherit from, subclasses should implement
+    processor_func_single and processor_func_double methods
+    """
+    def will_handle(*args):
+        if len(args) !=3: return False
+        if issubclass( type(args[1]), LLMRequest):
+            if issubclass(type(args[2]), LLMResponse):
+                return True
+        return False
+    def apply(self, request: LLMRequest, response: LLMResponse):
+        raise NotImplementedError("apply() not implemented")
+
+    def __call__(self, request: LLMRequest, response: LLMResponse):
+        # package the individual texts to be processed into lists, of lists to pass them around as objects
+        # apply the processor_func
+        # un-package and assign the reqeust or responses values to the modified data.
+        if (not request) and (not response):
+            raise RuntimeError("nothing to apply")
+        # set the params
+        else:
+            modify_list2 = []
+            report_list2 = []
+
+            if request:
+                if request.prompt:  # prompt req/resp: for moderation, similarity, length...
+                    # for moderation the texts can just be modified directly
+                    # for length the texts dont need altered just scored in the reports_list
+                    # for similarity the prompt needs to be compared to the text and we dont know how this instance
+                    # of this filter will be used, so... we assume the subclass will implement some way to figure it
+                    # out for their use case
+
+                    modify_list1 = [[i] for i in request.prompt]
+                    report_list1 = [[None]] * len(request.prompt)
+
+                    request.prompt = modify_list1
+                    request.prompt_processed_data[self.name] = report_list1
+
+            if response:
+                if response.text:
+                    modify_list2 = [[i] for i in response.text]
+                    report_list2 = [[None]] * len(response.text)
+
+                    response.text = modify_list2
+                    response.text_processed_data[self.name] = report_list2
+
+            ret_val = self.apply(modify_list1+modify_list2, report_list1+report_list2)
+
+        # now bring the dimensionality back one level
+            if request:
+                if request.prompt:
+                    request.prompt = [i[0] for i in request.prompt]
+                    request.prompt_processed_data[self.name] = [i[0] for i in request.prompt_processed_data[self.name]]
+            if response:
+                if response.text:
+                    response.text = [i[0] for i in response.text]
+                    response.text_processed_data[self.name] = [i[0] for i in response.text_processed_data[self.name]]
+        return ret_val
+        # types of use cases
+        # . search request
+        # . search response
+        # . search pair
+        # . completion request
+        # . completion response
+        # . completion pair
+        # . embedding request
+        # . embedding response
+        # . embedding pair
+        # . moderation request
+        # . moderation response
+        # . moderation pair
+        # . error
+
 
 class LLMWrapper:
     def __init__(self, api_name, api_key=None, completion_model_name=None, search_query_model_name=None,
@@ -136,6 +328,10 @@ class LLMWrapper:
             raise Exception("incoming class is not LLMRequest")
 
         if self.is_openai_api:
+            assert (request.query.__class__ ==
+                    request.prompt.__class__ ==
+                    request.documents.__class__ ==
+                    request.context.__class__ == list)
             oai_kwargs = {}
 
             if request.top_p is not None:
@@ -150,8 +346,13 @@ class LLMWrapper:
             oai_kwargs["stop"] = request.stop
             oai_kwargs["n"] = request.n
 
+            oai_kwargs["query"] = request.query
+            oai_kwargs["documents"] = request.documents
+
             if request.context:
-                oai_kwargs["prompt"] = request.context + request.prompt
+                if not (len(request.context) == len(request.prompt)):
+                    raise Exception("context and prompt arrays must be the same length")
+                oai_kwargs["prompt"] = [request.context[i]+request.prompt[i] for i in range(len(request.context))]
             else:
                 oai_kwargs["prompt"] = request.prompt
 
@@ -176,11 +377,16 @@ class LLMWrapper:
 
             res = [(cos_sim(query_embedding, choice_emb), choice) for choice, choice_emb in emb_tup]
             res = sorted(res, key=lambda x: x[0], reverse=True)
-            return res
+            out = LLMResponse()
+
+            for r in res:
+                out.text.append(r[1])
+                out.text_processed_data.append(r)
+            return out
 
     def search(self, request: LLMRequest) -> LLMResponse:
         """
-        returns the completion response from the llm api
+        returns the text response from the llm api
         :param request:
         :param prompt:
         :param kwargs:
@@ -195,7 +401,8 @@ class LLMWrapper:
             if not issubclass(request.__class__, LLMRequest):
                 raise Exception("Searches only possible with LLMRequest")
             else:
-                result = self.open_ai_search(request)
+                result = self.open_ai_search(kwargs)
+
                 return result
 
         elif self.is_other:
@@ -203,7 +410,7 @@ class LLMWrapper:
 
     def completion(self, prompt=None, kwargs: LLMRequest = None) -> LLMResponse:
         """
-        returns the completion response from the llm api, used for multiple completions
+        returns the text response from the llm api, used for multiple completions
         :param prompt:
         :param kwargs:
         :return: array of string completions
@@ -217,12 +424,14 @@ class LLMWrapper:
 
             kwargs_dict = self.handle_kwargs(kwargs)
 
-            #kwargs.pop("api_name")
+            kwargs_dict.pop("documents")
+            kwargs_dict.pop("query")
 
             result = openai.Completion.create(model=self.completion_model_name,
                                               **kwargs_dict)
+
             out_result = LLMResponse(raw_response=result,
-                                     completion=result["choices"])
+                                     text=[c.text for c in result["choices"]])
 
             return out_result
 
@@ -250,6 +459,7 @@ class LLMWrapper:
 
         elif self.is_other:
             raise Exception("not implemented")
+
     def kwargs_check(self, kwargs, prompt):
         if not prompt and not kwargs:
             raise Exception("No kwargs provided")
@@ -270,4 +480,3 @@ class LLMWrapper:
 
         # check for compatible kwargs
         return kwargs
-

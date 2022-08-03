@@ -1,0 +1,44 @@
+@startuml
+allowmixing
+
+title "These classes abstract away the underlying request and response objects"
+
+caption  "\nThe apply method acts on a list of strings contained in their own list so \
+\n that the base request and response objects are modified in place"
+
+class BaseLLMProcessor {
+__call__ must overriden by child classes
+and call apply
+__call__()
+
+}
+
+class LLMReqProcessor extends BaseLLMProcessor {
+    child classes must override apply
+    __call__(self,req)
+    apply()
+}
+
+class LLMResProcessor extends BaseLLMProcessor {
+    child classes must override apply
+    __call__(self,res)
+    apply()
+}
+
+class LLMReqResProcessor extends BaseLLMProcessor {
+    child classes must override apply
+    __call__(self,req,res)
+    apply()
+}
+
+class LLMModerationProcessor extends LLMReqResProcessor {
+    apply(self,modify_list,report_list)
+}
+
+class LLMLengthProcessor extends LLMResProcessor {
+    apply(self,modify_list,report_list)
+}
+
+@enduml
+
+

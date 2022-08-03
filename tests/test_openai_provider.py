@@ -33,7 +33,7 @@ def test_default_completion_call():
     from src import LLMWrapper
     API_KEY = os.getenv("OPENAI_API_KEY")
     my_llm = LLMWrapper("openai", API_KEY)
-    result = my_llm.completion("hello how are you?")
+    result = my_llm.text("hello how are you?")
     assert type(result) is str
 
 
@@ -49,7 +49,7 @@ def test_completion_with_specific_api_kwargs():
                        stop=".")
     API_KEY = os.getenv("OPENAI_API_KEY")
     my_llm = LLMWrapper("openai", API_KEY)
-    result = my_llm.completion(prompt="hello how are you?", kwargsclass=kws)
+    result = my_llm.text(prompt="hello how are you?", kwargsclass=kws)
     assert type(result) is str
 
 
@@ -60,5 +60,5 @@ def test_completion_with_invalid_api_kwargs():
     API_KEY = os.getenv("OPENAI_API_KEY")
     my_llm = LLMWrapper("openai", API_KEY)
     with pytest.raises(Exception) as e_info:
-        result = my_llm.completion(prompt="hello how are you?", kwargsclass=kws)
+        result = my_llm.text(prompt="hello how are you?", kwargsclass=kws)
     assert "keyword args class not for use with openai api" in str(e_info)
