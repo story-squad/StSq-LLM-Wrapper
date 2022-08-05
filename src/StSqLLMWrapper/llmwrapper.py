@@ -275,7 +275,7 @@ class LLMReqResProcessor(BaseLLMProcessor):
 
 class LLMWrapper:
     def __init__(self, api_name, api_key=None, completion_model_name=None, search_query_model_name=None,
-                 search_document_model_name=None,req_test_func=None, res_test_func=None):
+                 search_document_model_name=None, completion_test_generator=None):
         """
         :param api_name: openai, or another provider name (only openai in this version)
         :param api_key: provide or leave blank for env variable
@@ -305,10 +305,10 @@ class LLMWrapper:
             if search_query_model_name: self.search_query_model_name = search_query_model_name
             if search_document_model_name: self.search_document_model_name = search_document_model_name
 
-        if api_name.lower() == "test":
+        if completion_test_generator:
             self.is_test_api = True
-            self.req_test_func = req_test_func
-            self.res_test_func = res_test_func
+            self.completion_test_generator = completion_test_generator
+            self.res_test_func = completion_test_generator
 
         else:
             raise Exception("Invalid API name")
@@ -325,7 +325,7 @@ class LLMWrapper:
 
     def handle_kwargs(self, request: LLMRequest) -> dict:
         """
-        returns kwargs modified to be compatible with the current api
+        returns req modified to be compatible with the current api
         :rtype: dict
         """
         incoming_class = request.__class__
@@ -394,7 +394,7 @@ class LLMWrapper:
         returns the text response from the llm api
         :param request:
         :param prompt:
-        :param kwargs:
+        :param req:
         :return:
         """
 
@@ -413,21 +413,21 @@ class LLMWrapper:
         elif self.is_other:
             raise Exception("not implemented")
 
-    def completion(self, prompt=None, kwargs: LLMRequest = None) -> LLMResponse:
+    def completion(self, prompt=None, req: LLMRequest = None) -> LLMResponse:
         """
         returns the text response from the llm api, used for multiple completions
         :param prompt:
-        :param kwargs:
+        :param req:
         :return: array of string completions
         """
-        kwargs = self.kwargs_check(kwargs, prompt)
+        req = self.kwargs_check(req, prompt)
 
         if self.is_openai_api:
-            if not issubclass(kwargs.__class__, LLMRequest):
+            if not issubclass(req.__class__, LLMRequest):
                 raise Exception("keyword args class not for use with openai api")
             import openai
 
-            kwargs_dict = self.handle_kwargs(kwargs)
+            kwargs_dict = self.handle_kwargs(req)
 
             kwargs_dict.pop("documents")
             kwargs_dict.pop("query")
@@ -439,6 +439,8 @@ class LLMWrapper:
                                      text=[c.text for c in result["choices"]])
 
             return out_result
+        elif self.is_test_api:
+            return next(self.completion_test_generator)
 
         elif self.is_other:
             raise Exception("not implemented")
@@ -467,7 +469,7 @@ class LLMWrapper:
 
     def kwargs_check(self, kwargs, prompt):
         if not prompt and not kwargs:
-            raise Exception("No kwargs provided")
+            raise Exception("No req provided")
 
         if kwargs:
             if issubclass(kwargs.__class__, LLMRequest):
@@ -483,5 +485,5 @@ class LLMWrapper:
             kwargs = LLMRequest(prompt=prompt)
             prompt = None
 
-        # check for compatible kwargs
+        # check for compatible req
         return kwargs
