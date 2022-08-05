@@ -275,7 +275,7 @@ class LLMReqResProcessor(BaseLLMProcessor):
 
 class LLMWrapper:
     def __init__(self, api_name, api_key=None, completion_model_name=None, search_query_model_name=None,
-                 search_document_model_name=None):
+                 search_document_model_name=None,req_test_func=None, res_test_func=None):
         """
         :param api_name: openai, or another provider name (only openai in this version)
         :param api_key: provide or leave blank for env variable
@@ -304,6 +304,11 @@ class LLMWrapper:
             if completion_model_name: self.completion_model_name = completion_model_name
             if search_query_model_name: self.search_query_model_name = search_query_model_name
             if search_document_model_name: self.search_document_model_name = search_document_model_name
+
+        if api_name.lower() == "test":
+            self.is_test_api = True
+            self.req_test_func = req_test_func
+            self.res_test_func = res_test_func
 
         else:
             raise Exception("Invalid API name")
