@@ -305,7 +305,7 @@ class LLMWrapper:
             if search_query_model_name: self.search_query_model_name = search_query_model_name
             if search_document_model_name: self.search_document_model_name = search_document_model_name
 
-        if completion_test_generator:
+        elif completion_test_generator:
             self.is_test_api = True
             self.completion_test_generator = completion_test_generator
             self.res_test_func = completion_test_generator
