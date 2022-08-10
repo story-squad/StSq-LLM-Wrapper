@@ -222,6 +222,8 @@ class LLMReqResProcessor(BaseLLMProcessor):
             raise RuntimeError("nothing to apply")
         # set the params
         else:
+            modify_list1 = []
+            report_list1 = []
             modify_list2 = []
             report_list2 = []
 
