@@ -371,26 +371,33 @@ class LLMWrapper:
         if self.is_openai_api:
             import openai
             import numpy as np
+            query_str = request["query"]
 
-            query_embedding = openai.Embedding.create(input=request.query, model=self.search_query_model_name).data[
-                0].embedding
-            choices_embeddings = openai.Embedding.create(input=request.documents,
+            if type(query_str) == list:
+                if len(query_str) == 1:
+                    query_str = query_str[0]
+                else:
+                    raise Exception("query must be a single string")
+
+            query_embedding = openai.Embedding.create(input=query_str,
+                                                      model=self.search_query_model_name).data[0].embedding
+            choices_embeddings = openai.Embedding.create(input=request["documents"],
                                                          model=self.search_document_model_name).data
-            emb_tup = [
-                (choice, choice_emb.embedding) for choice, choice_emb in zip(request.documents, choices_embeddings)]
+            choice_emb_tup = [
+                (choice, choice_emb.embedding) for choice, choice_emb in zip(request["documents"], choices_embeddings)]
 
             def cos_sim(a, b):
                 a = np.array(a)
                 b = np.array(b)
                 return (a @ b.T) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-            res = [(cos_sim(query_embedding, choice_emb), choice) for choice, choice_emb in emb_tup]
-            res = sorted(res, key=lambda x: x[0], reverse=True)
+            lst_tup_sim_doc = [(cos_sim(query_embedding, choice_emb), choice) for choice, choice_emb in choice_emb_tup]
+            lst_tup_sim_doc = sorted(lst_tup_sim_doc, key=lambda x: x[0], reverse=True)
             out = LLMResponse()
-
-            for r in res:
+            out.text_processed_data["search"]=[]
+            for r in lst_tup_sim_doc:
                 out.text.append(r[1])
-                out.text_processed_data.append(r)
+                out.text_processed_data["search"].append((r[0],r[1],query_str))
             return out
 
     def search(self, request: LLMRequest) -> LLMResponse:
