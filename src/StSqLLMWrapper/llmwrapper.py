@@ -131,7 +131,9 @@ class BaseLLMProcessor:
 
     def __init__(self, name: str):
         self.name = name
-
+    def get_reference_list(self,size):
+        # returns a list of lists so as to enable passing of strings by reference
+        return [[None] for i in range(size)]
 
 class LLMReqProcessor(BaseLLMProcessor):
     def will_handle(*args):
@@ -162,12 +164,12 @@ class LLMReqProcessor(BaseLLMProcessor):
 
             if request.prompt:
                 modify_list += [[i] for i in request.prompt]
-                report_list += [[None]] * len(request.prompt)
+                report_list += self.get_reference_list(len(request.prompt))
                 request.prompt_processed_data[self.name] = report_list
 
             if request.context:
                 modify_list += [[i] for i in request.context]
-                report_list += [[None]] * len(request.context)
+                report_list += self.get_reference_list(len(request.context))
                 request.context_processed_data[self.name] = report_list
 
             self.apply(modify_list, report_list)
@@ -190,11 +192,11 @@ class LLMResProcessor(BaseLLMProcessor):
         else:
             if response.text:
                 modify_list += [[i.text] for i in response.choices]
-                report_list += [[None]] * len(response.text)
+                report_list += self.get_reference_list(len(response.text))
 
             if response.data:
                 modify_list += [i.embedding for i in response.data]
-                report_list += [[None]] * len(response.data)
+                report_list += self.get_reference_list(len(response.data))
 
         self.apply(modify_list, report_list)
 
@@ -232,7 +234,7 @@ class LLMReqResProcessor(BaseLLMProcessor):
                     # out for their use case
 
                     modify_list1 = [[i] for i in request.prompt]
-                    report_list1 = [[None]] * len(request.prompt)
+                    report_list1 = [[None] for i in range(len(request.prompt))]
 
                     request.prompt = modify_list1
                     request.prompt_processed_data[self.name] = report_list1
@@ -240,7 +242,7 @@ class LLMReqResProcessor(BaseLLMProcessor):
             if response:
                 if response.text:
                     modify_list2 = [[i] for i in response.text]
-                    report_list2 = [[None]] * len(response.text)
+                    report_list2 = self.get_reference_list(len(response.text))
 
                     response.text = modify_list2
                     response.text_processed_data[self.name] = report_list2
